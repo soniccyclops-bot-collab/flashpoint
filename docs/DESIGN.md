@@ -29,7 +29,7 @@ Flash's genius was a single unified mental model: the **timeline + stage**.
 - The **stage** is what you see. You draw on it, place objects on it.
 - The **timeline** is when things happen. Frames move left to right; time moves forward.
 - Everything is one of two things: a **shape** (drawn directly) or a **symbol** (a reusable object with its own timeline).
-- Code (ActionScript) was attached to frames and objects in the same interface.
+- Interactivity is added by attaching code to frames and object instances.
 
 This model is **understandable without documentation**. A child who has ever
 drawn a flipbook understands the timeline. A child who has ever played with
@@ -54,8 +54,8 @@ A browser-based multimedia creation tool with:
 - **Timeline + Stage editor** — the Flash mental model, modern execution
 - **Vector drawing tools** — create shapes directly in the editor, no external asset required
 - **Frame-by-frame and tween animation** — same as Flash
-- **Scripting** — a simple, approachable scripting language attached to frames and objects
-- **Single-file export** — publish to a `.fp` bundle (HTML + WebAssembly), shareable as one file, runnable in any browser
+- **Common Lisp scripting** — real Lisp, attached to frames and objects, with a clean macro surface for beginners
+- **Single-file export** — publish to a bundle (HTML + WebAssembly), shareable as one file, runnable in any browser
 - **Embeddable** — the published file runs without plugins, without installs, on any modern device
 
 What Flashpoint is **not**:
@@ -101,34 +101,68 @@ A symbol is a reusable object with its own timeline. Symbols are:
 Placing a symbol on stage creates an **instance**. The same symbol can have
 many instances, each with independent properties (position, scale, name).
 
-### Scripting Language (Flare)
+### Scripting: Common Lisp with a Macro Surface
 
-Flashpoint's scripting language is called **Flare**. It is designed to be:
+Flashpoint's scripting is **Common Lisp** — no separate scripting language.
+There is no "Flare" or any invented language. The scripting surface is a
+macro package that provides a clean, minimal API for beginners while being
+full CL for anyone who wants more.
 
-- Approachable to non-programmers
-- Immediately useful with minimal boilerplate
-- Attached to frames and object instances (same as ActionScript 2)
-- Safe — no file system access, no network access beyond approved APIs
+**Why not a custom scripting language?**
 
-**Syntax goals:** Python-like readability, no type declarations required, no
-class definitions required for simple scripts.
+Flash needed ActionScript because the `.swf` distribution model required a
+baked-in runtime — there was no other way to add interactivity. Flashpoint
+publishes to HTML + WebAssembly running in a browser. The runtime is already
+Common Lisp compiled to WASM. Adding a separate language would mean designing,
+implementing, parsing, compiling, and maintaining it for no gain. The language
+is already there.
 
-```flare
--- When this frame plays, move the ball
-ball.x = ball.x + 5
-ball.y = ball.y - 2
+**Why Common Lisp specifically?**
 
--- React to mouse click
-on click(ball):
-  gotoAndPlay("explode")
+Scheme (and Lisp generally) has the most approachable syntax of any language —
+not because it looks like English, but because it has exactly one rule:
+`(operator arguments)`. That's it. Python, despite its reputation, has dozens
+of special cases, sigils, and implicit behaviors. With one rule, a beginner
+thinks about *computation*, not syntax. SICP taught programming to MIT
+freshmen with Scheme for decades on exactly this principle.
 
--- Simple loop
-for i in range(10):
-  spawn(spark, stage.mouseX, stage.mouseY)
+**The macro surface for beginners:**
+
+A macro package provides clean, event-driven syntax that a non-programmer can
+read immediately:
+
+```lisp
+;; React to a mouse click
+(on-click button
+  (goto-and-play "level2"))
+
+;; Move something every frame
+(on-enter-frame
+  (incf (x player) 5))
+
+;; Respond to keyboard
+(when-key :space
+  (setf (visible bullet) t))
+
+;; Simple condition
+(when (> score 100)
+  (goto-and-play "win"))
+
+;; Variables
+(defvar score 0)
+(defvar player-name "Player 1")
 ```
 
-Flare compiles to WebAssembly for the published output. The editor runs an
-interpreter for live preview.
+That's real Common Lisp — no toy language, no wall between "beginner mode"
+and "advanced mode." When the beginner is ready for more, they're already
+writing CL. The graduation path is learning more of the same language.
+
+**SBCL condition system as error handling:**
+
+SBCL's condition system is wrapped to produce friendly, plain-language error
+messages. A missing variable name becomes "I don't know what 'bal' is — did
+you mean 'ball'?" not a raw stack trace. This is a presentation concern, not
+a language design concern.
 
 ---
 
@@ -145,7 +179,7 @@ interpreter for live preview.
 │  └─────────────┘  └──────────────────────────┘  │
 │  ┌─────────────┐  ┌──────────────────────────┐  │
 │  │  Drawing    │  │  Script editor           │  │
-│  │  tools      │  │  (Flare)                 │  │
+│  │  tools      │  │  (Common Lisp)           │  │
 │  └─────────────┘  └──────────────────────────┘  │
 │  ┌──────────────────────────────────────────┐    │
 │  │  Asset library (symbols, imported media) │    │
@@ -165,7 +199,7 @@ interpreter for live preview.
 
 The editor runs in the browser. No install. Built with:
 - **Canvas 2D API** — stage rendering, drawing tools
-- **WebAssembly** — Flare interpreter for live preview
+- **WebAssembly** — SBCL-compiled runtime for live script evaluation
 - **IndexedDB** — local project storage
 - **File System Access API** — open/save to local disk (where supported)
 
@@ -179,14 +213,16 @@ The editor is itself a web page. No Electron, no native wrapper. This means:
 A `.fp` file is a ZIP archive containing:
 - `project.json` — timeline data, symbol definitions, scene graph
 - `assets/` — imported images, audio, video
-- `scripts/` — Flare source files per frame/symbol
+- `scripts/` — Common Lisp source files per frame/symbol (plain text, `.lisp`)
 
 Human-readable project format — can be version-controlled, diffed, inspected.
+Scripts are plain `.lisp` files — editable in any text editor, not locked into
+the Flashpoint editor.
 
 ### Published Bundle
 
 When you click **Publish**:
-1. Flare scripts compile to WebAssembly
+1. Scripts are bundled with the SBCL-compiled runtime WASM
 2. Assets are bundled inline (Base64) or alongside as a ZIP
 3. Output is a single `index.html` + `runtime.wasm`
 4. Runs in any browser, no dependencies
@@ -194,96 +230,92 @@ When you click **Publish**:
 Target: a published file should be under 500KB for a simple animation, under
 5MB for a typical game. No external CDN dependencies.
 
-### Flare Runtime
+### The Runtime
 
-The Flare scripting runtime handles:
-- Frame event dispatch (`onEnterFrame`, `onMouseClick`, etc.)
+The runtime (compiled SBCL → WebAssembly) handles:
+- Frame event dispatch (`on-enter-frame`, `on-click`, `when-key`, etc.)
 - Stage access (positions, visibility, playback control)
 - Basic drawing API (for dynamic content)
 - Sound trigger and control
 - Symbol instantiation and destruction
 
-The runtime is a small WebAssembly module (~100KB target) that is embedded
-in every published file.
+The macro package is loaded at runtime startup. Scripts attached to frames
+and instances are evaluated against the running CL image.
 
 ---
 
-## Scripting Language Design: Flare
+## Scripting API Reference (Macro Surface)
 
-Flare is designed around five core principles:
+The beginner-facing API. Every macro expands to internal engine calls.
 
-1. **Readable by a non-programmer** — clear English-like syntax, no symbols where words work
-2. **Attached to objects** — scripts live on frames and instances, not in separate files
-3. **No setup required** — you can write a one-line script and it works
-4. **Errors are helpful** — error messages explain the problem in plain language
-5. **Gradual complexity** — simple things are simple, complex things are possible
+### Events
 
-### Core constructs
-
-```flare
--- Variables (no declaration needed)
-score = 0
-playerName = "Player 1"
-
--- Conditionals
-if score > 100:
-  gotoAndPlay("win")
-
--- Loops
-repeat 5:
-  ball.x = ball.x + 10
-
-for item in stage.children:
-  item.alpha = 0.5
-
--- Functions
-function moveLeft(thing, amount):
-  thing.x = thing.x - amount
-
-moveLeft(player, 10)
-
--- Events (attached to instances or frames)
-on click(button):
-  play()
-
-on enterFrame:
-  player.rotation = player.rotation + 1
-
--- Built-in timeline control
-play()
-stop()
-gotoAndPlay(frameNumber)
-gotoAndStop("labelName")
-gotoAndPlay("scene2")
-
--- Stage access
-stage.width
-stage.height
-stage.mouseX
-stage.mouseY
-
--- Instance access (by name given in editor)
-myBall.x
-myBall.y
-myBall.visible = false
-myBall.alpha = 0.5
-myBall.scaleX = 2
-
--- Sound
-sound("explosion").play()
-music("background").loop()
+```lisp
+(on-enter-frame &body body)           ; runs every frame
+(on-click instance &body body)        ; mouse click on instance
+(on-release instance &body body)      ; mouse button release
+(on-mouse-over instance &body body)   ; mouse enters instance bounds
+(on-mouse-out instance &body body)    ; mouse leaves instance bounds
+(when-key key &body body)             ; keyboard key pressed
 ```
 
-### Comparison with ActionScript 2
+### Timeline Control
 
-Flare is deliberately simpler than ActionScript 2. No class definitions, no
-type annotations, no inheritance for typical use cases. The target audience
-is someone who has never programmed before. ActionScript 2's complexity was
-a learning curve; Flare's design removes it.
+```lisp
+(play)                    ; play from current frame
+(stop)                    ; stop playback
+(goto-and-play target)    ; target is frame number or label string
+(goto-and-stop target)
+(next-frame)
+(prev-frame)
+(current-frame)           ; returns current frame number
+```
 
-Advanced users who need more can still write complex Flare — the language
-supports functions, closures, lists, and maps. But none of that is required
-to make a working game or animation.
+### Instance Properties
+
+```lisp
+(x instance)              ; get/setf x position
+(y instance)              ; get/setf y position
+(width instance)          ; get/setf width
+(height instance)         ; get/setf height
+(rotation instance)       ; get/setf rotation in degrees
+(scale-x instance)        ; get/setf x scale factor
+(scale-y instance)        ; get/setf y scale factor
+(alpha instance)          ; get/setf opacity (0.0–1.0)
+(visible instance)        ; get/setf boolean visibility
+```
+
+All properties are setf-able:
+```lisp
+(setf (x ball) 100)
+(incf (x ball) 5)
+(setf (visible enemy) nil)
+```
+
+### Stage
+
+```lisp
+(stage-width)             ; stage width in pixels
+(stage-height)            ; stage height in pixels
+(mouse-x)                 ; current mouse X position
+(mouse-y)                 ; current mouse Y position
+```
+
+### Symbols
+
+```lisp
+(spawn symbol-name x y)   ; create a new instance of symbol
+(destroy instance)        ; remove instance from stage
+(instances-of symbol-name) ; list of all instances of symbol
+```
+
+### Sound
+
+```lisp
+(play-sound name)         ; play a sound asset once
+(loop-sound name)         ; loop a sound asset
+(stop-sound name)         ; stop a playing sound
+```
 
 ---
 
@@ -293,14 +325,14 @@ to make a working game or animation.
 |------|---------------------|
 | **Godot** | Requires understanding the scene/node architecture before anything works |
 | **Unity** | Large install, complex project setup, primarily 3D-oriented UX |
-| **GDevelop** | Closest competitor; event-based rather than timeline-based, browser output is good but the tool model is different |
-| **Scratch** | Block-based is great for children but condescending to teenagers; no timeline |
-| **Animate CC** | Adobe's Flash successor; $55/month subscription, professional-oriented, abandoned approachability |
-| **Bitsy** | Extremely constrained (intentionally); too limited for most creative visions |
-| **Pico-8** | Fantasy console constraints are inspiring but require programming first; no visual timeline |
+| **GDevelop** | Event-based rather than timeline-based; no real scripting language |
+| **Scratch** | Block-based is appropriate for young children but becomes limiting; no timeline |
+| **Animate CC** | Adobe's Flash successor; $55/month subscription, professional-oriented |
+| **Bitsy** | Deliberately constrained; too limited for most creative visions |
+| **Pico-8** | Fantasy console constraints require programming first; no visual timeline |
 
-Flashpoint's niche: timeline + stage mental model, vector drawing built in,
-scripting that a non-programmer can read and write, browser-native output,
+Flashpoint's niche: timeline + stage model, vector drawing built in, Common
+Lisp scripting with a beginner-friendly macro surface, browser-native output,
 free and open-source.
 
 ---
@@ -312,7 +344,7 @@ free and open-source.
 - Stage with basic shape tools (rectangle, ellipse, pencil, fill)
 - Timeline with layers and keyframes
 - Basic playback (scrub, play, stop)
-- Project save/load (JSON, IndexedDB)
+- Project save/load (JSON + scripts, IndexedDB)
 
 ### Phase 1: Animation
 - Tweening (motion, scale, rotation, alpha)
@@ -321,10 +353,10 @@ free and open-source.
 - Frame labels
 
 ### Phase 2: Scripting
-- Flare language parser and interpreter
+- SBCL compiled to WebAssembly for the runtime
+- Macro package: on-enter-frame, on-click, when-key, etc.
 - Frame scripts and instance scripts
-- Event system (click, enterFrame, keyDown, etc.)
-- Stage API (access instances by name, control playback)
+- Friendly error messages wrapping SBCL's condition system
 
 ### Phase 3: Assets
 - Image import (PNG, JPEG, SVG)
@@ -332,8 +364,7 @@ free and open-source.
 - Asset library panel
 
 ### Phase 4: Publish
-- Flare → WebAssembly compiler
-- Single-file bundle export
+- Single-file bundle export (index.html + runtime.wasm)
 - Preview mode (test published output in the editor)
 
 ### Phase 5: Polish
@@ -341,21 +372,6 @@ free and open-source.
 - Scene management (multiple scenes in one project)
 - Undo/redo
 - Keyboard shortcuts
-
----
-
-## Language and Runtime Implementation
-
-The Flare interpreter (phases 2-3) will be implemented in Common Lisp (SBCL)
-and compiled to WebAssembly. This gives us:
-- A real language implementation with proper semantics
-- SBCL's native performance characteristics
-- The ability to run the interpreter both in the editor (for live preview) and
-  in the published bundle (for the runtime)
-
-The Flare → WebAssembly compiler (phase 4) is a separate path for published
-output: compile Flare directly to WASM bytecode for maximum performance in
-the final published file.
 
 ---
 
@@ -367,17 +383,18 @@ the final published file.
 4. **Single-file publish** — one file to share, one file to host
 5. **Works on tablets** — the audience includes teenagers without laptops
 6. **Under 5 minutes to first creation** — the approachability bar from the problem statement
+7. **No invented scripting language** — Common Lisp macros suffice; don't build what you already have
 
 ---
 
 ## Open Questions
 
-1. **Flare syntax:** Python-style indentation vs. explicit `end` keywords? Indentation is more modern but can trip up beginners. Explicit keywords are more forgiving for whitespace errors.
+1. **SBCL → WASM toolchain:** SBCL can compile to WASM via the WASM backend or via intermediate C. Current maturity of the SBCL WASM target needs evaluation. Alternative: use WASM-optimized CL like `WebAssembly Scheme` or `BiwaScheme` if SBCL WASM is too large.
 
-2. **Drawing tools first or timeline first?** Starting with drawing gives immediate creative satisfaction. Starting with timeline gives immediate understanding of the core model. Probably drawing first for the initial experience.
+2. **Editor language:** The editor UI itself (Canvas rendering, timeline, drawing tools) should probably be in ClojureScript targeting the browser, keeping the CL family consistent. Alternatively TypeScript for broader contributor familiarity.
 
-3. **Collaboration:** Real-time multiplayer editing (like Figma) would be powerful but adds significant complexity. Phase 2+ consideration.
+3. **Script evaluation model:** When a frame script runs in the editor (live preview), it needs to evaluate in a sandboxed SBCL image that has access to the stage state. The communication between the JS editor and the WASM runtime needs careful design.
 
-4. **Sound in the editor:** Live sound during scrubbing is the Flash experience but requires careful Web Audio API work.
+4. **Drawing on tablets:** Designing the editor for touchscreen input — drawing, timeline scrubbing, symbol placement — requires specific UX work. Stylus support is particularly important for the drawing tools.
 
-5. **Mobile creation:** Designing the editor for touchscreen input is non-trivial. Tablet support is a constraint but the tools UX for touch input (drawing, timeline scrubbing) needs specific design work.
+5. **Sound in the editor:** Live sound during scrubbing requires Web Audio API integration. Needs specific design to avoid audio chaos during fast scrubbing.
